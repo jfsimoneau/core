@@ -30,7 +30,7 @@ from homeassistant.data_entry_flow import FlowResultType
                 CONF_ZONE: "zone.home",
                 CONF_TRACKED_ENTITIES: ["device_tracker.test1"],
                 CONF_IGNORED_ZONES: [],
-                CONF_TOLERANCE: 1,
+                CONF_TOLERANCE: 0.5,
             },
         ),
         (
@@ -38,13 +38,13 @@ from homeassistant.data_entry_flow import FlowResultType
                 CONF_ZONE: "zone.home",
                 CONF_TRACKED_ENTITIES: ["device_tracker.test1"],
                 CONF_IGNORED_ZONES: ["zone.work"],
-                CONF_TOLERANCE: 10,
+                CONF_TOLERANCE: 1,
             },
             {
                 CONF_ZONE: "zone.home",
                 CONF_TRACKED_ENTITIES: ["device_tracker.test1"],
                 CONF_IGNORED_ZONES: ["zone.work"],
-                CONF_TOLERANCE: 10,
+                CONF_TOLERANCE: 1,
             },
         ),
     ],
@@ -114,7 +114,7 @@ async def test_options_flow(
             CONF_ZONE: "zone.home",
             CONF_TRACKED_ENTITIES: ["device_tracker.test1"],
             CONF_IGNORED_ZONES: ["zone.work"],
-            CONF_TOLERANCE: 10,
+            CONF_TOLERANCE: 1,
         },
         unique_id=f"{DOMAIN}_home",
     )
@@ -147,7 +147,7 @@ async def test_abort_duplicated_entry(hass: HomeAssistant) -> None:
         CONF_ZONE: "zone.home",
         CONF_TRACKED_ENTITIES: ["device_tracker.test1"],
         CONF_IGNORED_ZONES: ["zone.work"],
-        CONF_TOLERANCE: 10,
+        CONF_TOLERANCE: 1,
     }
     mock_config = MockConfigEntry(
         domain=DOMAIN,
@@ -184,7 +184,7 @@ async def test_avoid_duplicated_title(hass: HomeAssistant) -> None:
             CONF_ZONE: "zone.home",
             CONF_TRACKED_ENTITIES: ["device_tracker.test1"],
             CONF_IGNORED_ZONES: ["zone.work"],
-            CONF_TOLERANCE: 10,
+            CONF_TOLERANCE: 1,
         },
         unique_id=f"{DOMAIN}_home",
     ).add_to_hass(hass)
@@ -197,7 +197,7 @@ async def test_avoid_duplicated_title(hass: HomeAssistant) -> None:
             CONF_ZONE: "zone.home",
             CONF_TRACKED_ENTITIES: ["device_tracker.test2"],
             CONF_IGNORED_ZONES: ["zone.work"],
-            CONF_TOLERANCE: 10,
+            CONF_TOLERANCE: 1,
         },
         unique_id=f"{DOMAIN}_home_3",
     ).add_to_hass(hass)
@@ -214,7 +214,7 @@ async def test_avoid_duplicated_title(hass: HomeAssistant) -> None:
                 CONF_ZONE: "zone.home",
                 CONF_TRACKED_ENTITIES: ["device_tracker.test3"],
                 CONF_IGNORED_ZONES: [],
-                CONF_TOLERANCE: 10,
+                CONF_TOLERANCE: 1,
             },
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -231,7 +231,7 @@ async def test_avoid_duplicated_title(hass: HomeAssistant) -> None:
                 CONF_ZONE: "zone.home",
                 CONF_TRACKED_ENTITIES: ["device_tracker.test4"],
                 CONF_IGNORED_ZONES: [],
-                CONF_TOLERANCE: 10,
+                CONF_TOLERANCE: 1,
             },
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY

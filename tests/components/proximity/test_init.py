@@ -1,9 +1,11 @@
 """The tests for the Proximity component."""
 
+from datetime import timedelta
 from typing import Any
 
+from freezegun import freeze_time
 import pytest
-from pytest_homeassistant.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry, async_fire_time_changed
 from pytest_homeassistant.components.repairs import (
     process_repair_fix_flow,
     start_repair_fix_flow,
@@ -28,15 +30,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.setup import async_setup_component
-from homeassistant.util import slugify
+from homeassistant.util import dt as dt_util, slugify
 
 
 async def async_setup_single_entry(
     hass: HomeAssistant,
     zone: str,
-    tracked_entites: list[str],
+    tracked_entities: list[str],
     ignored_zones: list[str],
-    tolerance: int,
+    tolerance: float,
 ) -> MockConfigEntry:
     """Set up the proximity component with a single entry."""
     mock_config = MockConfigEntry(
@@ -45,7 +47,7 @@ async def async_setup_single_entry(
         version=2,
         options={
             CONF_ZONE: zone,
-            CONF_TRACKED_ENTITIES: tracked_entites,
+            CONF_TRACKED_ENTITIES: tracked_entities,
             CONF_IGNORED_ZONES: ignored_zones,
             CONF_TOLERANCE: tolerance,
         },
@@ -62,13 +64,13 @@ async def async_setup_single_entry(
         {
             CONF_IGNORED_ZONES: ["zone.work"],
             CONF_TRACKED_ENTITIES: ["device_tracker.test1", "device_tracker.test2"],
-            CONF_TOLERANCE: 1,
+            CONF_TOLERANCE: 0.5,
             CONF_ZONE: "zone.home",
         },
         {
             CONF_IGNORED_ZONES: [],
             CONF_TRACKED_ENTITIES: ["device_tracker.test1"],
-            CONF_TOLERANCE: 1,
+            CONF_TOLERANCE: 0.5,
             CONF_ZONE: "zone.work",
         },
     ],
@@ -102,7 +104,7 @@ async def test_proximities(hass: HomeAssistant, config: dict) -> None:
 
 async def test_device_tracker_test1_in_zone(hass: HomeAssistant) -> None:
     """Test for tracker in zone."""
-    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 1)
+    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 0.5)
 
     hass.states.async_set(
         "device_tracker.test1",
@@ -124,7 +126,7 @@ async def test_device_tracker_test1_in_zone(hass: HomeAssistant) -> None:
 
 async def test_device_tracker_test1_away(hass: HomeAssistant) -> None:
     """Test for tracker state away."""
-    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 1)
+    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 0.5)
 
     hass.states.async_set(
         "device_tracker.test1",
@@ -149,7 +151,7 @@ async def test_device_tracker_test1_awayfurther(
     hass: HomeAssistant, config_zones
 ) -> None:
     """Test for tracker state away further."""
-    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 1)
+    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 0.5)
 
     hass.states.async_set(
         "device_tracker.test1",
@@ -190,7 +192,7 @@ async def test_device_tracker_test1_awaycloser(
     hass: HomeAssistant, config_zones
 ) -> None:
     """Test for tracker state away closer."""
-    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 1)
+    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 0.5)
 
     hass.states.async_set(
         "device_tracker.test1",
@@ -229,7 +231,7 @@ async def test_device_tracker_test1_awaycloser(
 
 async def test_all_device_trackers_in_ignored_zone(hass: HomeAssistant) -> None:
     """Test for tracker in ignored zone."""
-    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 1)
+    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 0.5)
 
     hass.states.async_set("device_tracker.test1", "work", {"friendly_name": "test1"})
     await hass.async_block_till_done()
@@ -247,7 +249,7 @@ async def test_all_device_trackers_in_ignored_zone(hass: HomeAssistant) -> None:
 
 async def test_device_tracker_test1_no_coordinates(hass: HomeAssistant) -> None:
     """Test for tracker with no coordinates."""
-    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 1)
+    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 0.5)
 
     hass.states.async_set(
         "device_tracker.test1", "not_home", {"friendly_name": "test1"}
@@ -268,32 +270,37 @@ async def test_device_tracker_test1_no_coordinates(hass: HomeAssistant) -> None:
 async def test_device_tracker_test1_awayfurther_a_bit(hass: HomeAssistant) -> None:
     """Test for tracker states."""
     await async_setup_single_entry(
-        hass, "zone.home", ["device_tracker.test1"], ["zone.work"], 1000
+        hass, "zone.home", ["device_tracker.test1"], ["zone.work"], 10
     )
 
-    hass.states.async_set(
-        "device_tracker.test1",
-        "not_home",
-        {"friendly_name": "test1", "latitude": 20.1000001, "longitude": 10.1000001},
-    )
-    await hass.async_block_till_done()
+    with freeze_time(dt_util.utcnow()) as freeze_now:
+        hass.states.async_set(
+            "device_tracker.test1",
+            "not_home",
+            {"friendly_name": "test1", "latitude": 20.1000001, "longitude": 10.1000001},
+        )
+        await hass.async_block_till_done()
 
-    # sensor entities
-    state = hass.states.get("sensor.home_nearest_device")
-    assert state.state == "test1"
+        # sensor entities
+        state = hass.states.get("sensor.home_nearest_device")
+        assert state.state == "test1"
 
-    entity_base_name = "sensor.home_test1"
-    state = hass.states.get(f"{entity_base_name}_distance")
-    assert state.state == "2218742"
-    state = hass.states.get(f"{entity_base_name}_direction_of_travel")
-    assert state.state == STATE_UNKNOWN
+        entity_base_name = "sensor.home_test1"
+        state = hass.states.get(f"{entity_base_name}_distance")
+        assert state.state == "2218742"
+        state = hass.states.get(f"{entity_base_name}_direction_of_travel")
+        assert state.state == STATE_UNKNOWN
 
-    hass.states.async_set(
-        "device_tracker.test1",
-        "not_home",
-        {"friendly_name": "test1", "latitude": 20.1000002, "longitude": 10.1000002},
-    )
-    await hass.async_block_till_done()
+        freeze_now.tick(timedelta(seconds=5))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+        hass.states.async_set(
+            "device_tracker.test1",
+            "not_home",
+            {"friendly_name": "test1", "latitude": 20.1000002, "longitude": 10.1000002},
+        )
+        await hass.async_block_till_done()
 
     # sensor entities
     state = hass.states.get("sensor.home_nearest_device")
@@ -306,6 +313,87 @@ async def test_device_tracker_test1_awayfurther_a_bit(hass: HomeAssistant) -> No
     assert state.state == "stationary"
 
 
+async def test_device_tracker_test1_decay(hass: HomeAssistant) -> None:
+    """Test for tracker states."""
+    await async_setup_single_entry(
+        hass, "zone.home", ["device_tracker.test1"], ["zone.work"], 10
+    )
+
+    with freeze_time(dt_util.utcnow()) as freeze_now:
+        hass.states.async_set(
+            "device_tracker.test1",
+            "not_home",
+            {"friendly_name": "test1", "latitude": 20.1, "longitude": 10.1},
+        )
+        await hass.async_block_till_done()
+
+        # sensor entities
+        state = hass.states.get("sensor.home_nearest_device")
+        assert state.state == "test1"
+
+        entity_base_name = "sensor.home_test1"
+        state = hass.states.get(f"{entity_base_name}_distance")
+        assert state.state == "2218742"
+        state = hass.states.get(f"{entity_base_name}_direction_of_travel")
+        assert state.state == STATE_UNKNOWN
+        state = hass.states.get(f"{entity_base_name}_speed")
+        assert state.state == STATE_UNKNOWN
+
+        freeze_now.tick(timedelta(seconds=180))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+        hass.states.async_set(
+            "device_tracker.test1",
+            "not_home",
+            {"friendly_name": "test1", "latitude": 20.15, "longitude": 10.15},
+        )
+        await hass.async_block_till_done()
+
+        state = hass.states.get(f"{entity_base_name}_distance")
+        assert state.state == "2226060"
+        state = hass.states.get(f"{entity_base_name}_direction_of_travel")
+        assert state.state == "away_from"
+        state = hass.states.get(f"{entity_base_name}_speed")
+        assert float(state.state) == pytest.approx(42.3, abs=0.1)
+
+        freeze_now.tick(timedelta(seconds=200))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+        state = hass.states.get(f"{entity_base_name}_direction_of_travel")
+        assert state.state == "away_from"
+        state = hass.states.get(f"{entity_base_name}_speed")
+        assert float(state.state) == pytest.approx(13.6, abs=0.1)
+
+        freeze_now.tick(timedelta(seconds=300))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+        state = hass.states.get(f"{entity_base_name}_direction_of_travel")
+        assert state.state == "away_from"
+        state = hass.states.get(f"{entity_base_name}_speed")
+        assert float(state.state) == pytest.approx(6.14, abs=0.1)
+
+        freeze_now.tick(timedelta(seconds=300))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+        state = hass.states.get(f"{entity_base_name}_direction_of_travel")
+        assert state.state == "away_from"
+        state = hass.states.get(f"{entity_base_name}_speed")
+        assert float(state.state) == pytest.approx(2.23, abs=0.1)
+
+        freeze_now.tick(timedelta(seconds=300))
+        async_fire_time_changed(hass, dt_util.utcnow())
+        await hass.async_block_till_done()
+
+        state = hass.states.get(f"{entity_base_name}_direction_of_travel")
+        assert state.state == "stationary"
+        state = hass.states.get(f"{entity_base_name}_speed")
+        assert float(state.state) == 0.0
+
+
 async def test_device_trackers_in_zone(hass: HomeAssistant) -> None:
     """Test for trackers in zone."""
     await async_setup_single_entry(
@@ -313,7 +401,7 @@ async def test_device_trackers_in_zone(hass: HomeAssistant) -> None:
         "zone.home",
         ["device_tracker.test1", "device_tracker.test2"],
         ["zone.work"],
-        1,
+        0.5,
     )
 
     hass.states.async_set(
@@ -372,7 +460,7 @@ async def test_device_tracker_in_non_home_zone(
     )
 
     await async_setup_single_entry(
-        hass, "zone.work_office", ["device_tracker.test1"], [], 1
+        hass, "zone.work_office", ["device_tracker.test1"], [], 0.5
     )
 
     hass.states.async_set(
@@ -470,7 +558,7 @@ async def test_legacy_device_tracker_home_with_empty_in_zones(
     Regression test for legacy device trackers that do not populate in_zones
     but still report their state as home when inside the home zone.
     """
-    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 1)
+    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 0.5)
 
     hass.states.async_set(
         "device_tracker.test1",
@@ -503,7 +591,7 @@ async def test_device_tracker_test1_awayfurther_than_test2_first_test1(
         "zone.home",
         ["device_tracker.test1", "device_tracker.test2"],
         ["zone.work"],
-        1,
+        0.5,
     )
 
     hass.states.async_set(
@@ -569,7 +657,7 @@ async def test_device_tracker_test1_awayfurther_than_test2_first_test2(
         "zone.home",
         ["device_tracker.test1", "device_tracker.test2"],
         ["zone.work"],
-        1,
+        0.5,
     )
 
     hass.states.async_set(
@@ -633,7 +721,7 @@ async def test_device_tracker_test1_awayfurther_test2_in_ignored_zone(
         "zone.home",
         ["device_tracker.test1", "device_tracker.test2"],
         ["zone.work"],
-        1,
+        0.5,
     )
     hass.states.async_set(
         "device_tracker.test1",
@@ -675,7 +763,7 @@ async def test_device_tracker_test1_awayfurther_test2_first(
         "zone.home",
         ["device_tracker.test1", "device_tracker.test2"],
         ["zone.work"],
-        1,
+        0.5,
     )
 
     hass.states.async_set(
@@ -745,7 +833,7 @@ async def test_device_tracker_test1_nearest_after_test2_in_ignored_zone(
         "zone.home",
         ["device_tracker.test1", "device_tracker.test2"],
         ["zone.work"],
-        1,
+        0.5,
     )
 
     hass.states.async_set(
@@ -821,115 +909,140 @@ async def test_device_tracker_test1_nearest_after_test2_in_ignored_zone(
 async def test_nearest_sensors(hass: HomeAssistant, config_zones) -> None:
     """Test for nearest sensors."""
     await async_setup_single_entry(
-        hass, "zone.home", ["device_tracker.test1", "device_tracker.test2"], [], 1
+        hass, "zone.home", ["device_tracker.test1", "device_tracker.test2"], [], 0.5
     )
 
-    hass.states.async_set(
-        "device_tracker.test1",
-        "not_home",
-        {"friendly_name": "test1", "latitude": 20, "longitude": 10},
-    )
-    hass.states.async_set(
-        "device_tracker.test2",
-        "not_home",
-        {"friendly_name": "test2", "latitude": 40, "longitude": 20},
-    )
-    await hass.async_block_till_done()
+    with freeze_time(dt_util.utcnow()) as freeze_now:
+        hass.states.async_set(
+            "device_tracker.test1",
+            "not_home",
+            {"friendly_name": "test1", "latitude": 20, "longitude": 10},
+        )
+        hass.states.async_set(
+            "device_tracker.test2",
+            "not_home",
+            {"friendly_name": "test2", "latitude": 40, "longitude": 20},
+        )
+        await hass.async_block_till_done()
 
-    hass.states.async_set(
-        "device_tracker.test1",
-        "not_home",
-        {"friendly_name": "test1", "latitude": 15, "longitude": 8},
-    )
-    hass.states.async_set(
-        "device_tracker.test2",
-        "not_home",
-        {"friendly_name": "test2", "latitude": 45, "longitude": 22},
-    )
-    await hass.async_block_till_done()
+        freeze_now.tick(timedelta(seconds=5))
+        hass.states.async_set(
+            "device_tracker.test1",
+            "not_home",
+            {"friendly_name": "test1", "latitude": 15, "longitude": 8},
+        )
+        hass.states.async_set(
+            "device_tracker.test2",
+            "not_home",
+            {"friendly_name": "test2", "latitude": 45, "longitude": 22},
+        )
+        await hass.async_block_till_done()
 
-    # sensor entities
-    state = hass.states.get("sensor.home_nearest_device")
-    assert state.state == "test1"
-    state = hass.states.get("sensor.home_nearest_distance")
-    assert state.state == "1615580"
-    state = hass.states.get("sensor.home_test1_direction_of_travel")
-    assert state.state == "towards"
-    state = hass.states.get("sensor.home_test1_distance")
-    assert state.state == "1615580"
-    state = hass.states.get("sensor.home_test1_direction_of_travel")
-    assert state.state == "towards"
-    state = hass.states.get("sensor.home_test2_distance")
-    assert state.state == "5176048"
-    state = hass.states.get("sensor.home_test2_direction_of_travel")
-    assert state.state == "away_from"
+        # sensor entities
+        state = hass.states.get("sensor.home_nearest_device")
+        assert state.state == "test1"
+        state = hass.states.get("sensor.home_nearest_distance")
+        assert state.state == "1615580"
+        state = hass.states.get("sensor.home_nearest_direction_of_travel")
+        assert state.state == "towards"
+        state = hass.states.get("sensor.home_test1_distance")
+        assert state.state == "1615580"
+        state = hass.states.get("sensor.home_test1_direction_of_travel")
+        assert state.state == "towards"
+        state = hass.states.get("sensor.home_test2_distance")
+        assert state.state == "5176048"
+        state = hass.states.get("sensor.home_test2_direction_of_travel")
+        assert state.state == "away_from"
 
-    # move the far tracker
-    hass.states.async_set(
-        "device_tracker.test2",
-        "not_home",
-        {"friendly_name": "test2", "latitude": 40, "longitude": 20},
-    )
-    await hass.async_block_till_done()
-    state = hass.states.get("sensor.home_nearest_device")
-    assert state.state == "test1"
-    state = hass.states.get("sensor.home_nearest_distance")
-    assert state.state == "1615580"
-    state = hass.states.get("sensor.home_nearest_direction_of_travel")
-    assert state.state == "towards"
-    state = hass.states.get("sensor.home_test1_distance")
-    assert state.state == "1615580"
-    state = hass.states.get("sensor.home_test1_direction_of_travel")
-    assert state.state == "towards"
-    state = hass.states.get("sensor.home_test2_distance")
-    assert state.state == "4611394"
-    state = hass.states.get("sensor.home_test2_direction_of_travel")
-    assert state.state == "towards"
+        # let the movement decay to stationary
+        for _ in range(1, 30):
+            freeze_now.tick(timedelta(minutes=1))
+            async_fire_time_changed(hass, dt_util.utcnow())
+            await hass.async_block_till_done()
+        state = hass.states.get("sensor.home_nearest_device")
+        assert state.state == "test1"
+        state = hass.states.get("sensor.home_nearest_distance")
+        assert state.state == "1615580"
+        state = hass.states.get("sensor.home_nearest_direction_of_travel")
+        assert state.state == "stationary"
+        state = hass.states.get("sensor.home_test1_distance")
+        assert state.state == "1615580"
+        state = hass.states.get("sensor.home_test1_direction_of_travel")
+        assert state.state == "stationary"
+        state = hass.states.get("sensor.home_test2_distance")
+        assert state.state == "5176048"
+        state = hass.states.get("sensor.home_test2_direction_of_travel")
+        assert state.state == "stationary"
 
-    # move the near tracker
-    hass.states.async_set(
-        "device_tracker.test1",
-        "not_home",
-        {"friendly_name": "test1", "latitude": 20, "longitude": 10},
-    )
-    await hass.async_block_till_done()
-    state = hass.states.get("sensor.home_nearest_device")
-    assert state.state == "test1"
-    state = hass.states.get("sensor.home_nearest_distance")
-    assert state.state == "2204112"
-    state = hass.states.get("sensor.home_nearest_direction_of_travel")
-    assert state.state == "away_from"
-    state = hass.states.get("sensor.home_test1_distance")
-    assert state.state == "2204112"
-    state = hass.states.get("sensor.home_test1_direction_of_travel")
-    assert state.state == "away_from"
-    state = hass.states.get("sensor.home_test2_distance")
-    assert state.state == "4611394"
-    state = hass.states.get("sensor.home_test2_direction_of_travel")
-    assert state.state == "towards"
+        # move the far tracker
+        freeze_now.tick(timedelta(minutes=1))
+        hass.states.async_set(
+            "device_tracker.test2",
+            "not_home",
+            {"friendly_name": "test2", "latitude": 40, "longitude": 20},
+        )
+        await hass.async_block_till_done()
+        state = hass.states.get("sensor.home_nearest_device")
+        assert state.state == "test1"
+        state = hass.states.get("sensor.home_nearest_distance")
+        assert state.state == "1615580"
+        state = hass.states.get("sensor.home_nearest_direction_of_travel")
+        assert state.state == "stationary"
+        state = hass.states.get("sensor.home_test1_distance")
+        assert state.state == "1615580"
+        state = hass.states.get("sensor.home_test1_direction_of_travel")
+        assert state.state == "stationary"
+        state = hass.states.get("sensor.home_test2_distance")
+        assert state.state == "4611394"
+        state = hass.states.get("sensor.home_test2_direction_of_travel")
+        assert state.state == "towards"
 
-    # get unknown distance and direction
-    hass.states.async_set(
-        "device_tracker.test1", "not_home", {"friendly_name": "test1"}
-    )
-    hass.states.async_set(
-        "device_tracker.test2", "not_home", {"friendly_name": "test2"}
-    )
-    await hass.async_block_till_done()
-    state = hass.states.get("sensor.home_nearest_device")
-    assert state.state == STATE_UNKNOWN
-    state = hass.states.get("sensor.home_nearest_distance")
-    assert state.state == STATE_UNKNOWN
-    state = hass.states.get("sensor.home_nearest_direction_of_travel")
-    assert state.state == STATE_UNKNOWN
-    state = hass.states.get("sensor.home_test1_distance")
-    assert state.state == STATE_UNKNOWN
-    state = hass.states.get("sensor.home_test1_direction_of_travel")
-    assert state.state == STATE_UNKNOWN
-    state = hass.states.get("sensor.home_test2_distance")
-    assert state.state == STATE_UNKNOWN
-    state = hass.states.get("sensor.home_test2_direction_of_travel")
-    assert state.state == STATE_UNKNOWN
+        # move the near tracker
+        freeze_now.tick(timedelta(minutes=1))
+        hass.states.async_set(
+            "device_tracker.test1",
+            "not_home",
+            {"friendly_name": "test1", "latitude": 20, "longitude": 10},
+        )
+        await hass.async_block_till_done()
+        state = hass.states.get("sensor.home_nearest_device")
+        assert state.state == "test1"
+        state = hass.states.get("sensor.home_nearest_distance")
+        assert state.state == "2204112"
+        state = hass.states.get("sensor.home_nearest_direction_of_travel")
+        assert state.state == "away_from"
+        state = hass.states.get("sensor.home_test1_distance")
+        assert state.state == "2204112"
+        state = hass.states.get("sensor.home_test1_direction_of_travel")
+        assert state.state == "away_from"
+        state = hass.states.get("sensor.home_test2_distance")
+        assert state.state == "4611394"
+        state = hass.states.get("sensor.home_test2_direction_of_travel")
+        assert state.state == "towards"
+
+        # get unknown distance and direction
+        freeze_now.tick(timedelta(minutes=1))
+        hass.states.async_set(
+            "device_tracker.test1", "not_home", {"friendly_name": "test1"}
+        )
+        hass.states.async_set(
+            "device_tracker.test2", "not_home", {"friendly_name": "test2"}
+        )
+        await hass.async_block_till_done()
+        state = hass.states.get("sensor.home_nearest_device")
+        assert state.state == STATE_UNKNOWN
+        state = hass.states.get("sensor.home_nearest_distance")
+        assert state.state == STATE_UNKNOWN
+        state = hass.states.get("sensor.home_nearest_direction_of_travel")
+        assert state.state == STATE_UNKNOWN
+        state = hass.states.get("sensor.home_test1_distance")
+        assert state.state == STATE_UNKNOWN
+        state = hass.states.get("sensor.home_test1_direction_of_travel")
+        assert state.state == STATE_UNKNOWN
+        state = hass.states.get("sensor.home_test2_distance")
+        assert state.state == STATE_UNKNOWN
+        state = hass.states.get("sensor.home_test2_direction_of_travel")
+        assert state.state == STATE_UNKNOWN
 
 
 async def test_create_removed_tracked_entity_issue(
@@ -951,7 +1064,7 @@ async def test_create_removed_tracked_entity_issue(
 
     assert await async_setup_component(hass, "repairs", {})
     mock_config = await async_setup_single_entry(
-        hass, "zone.home", [t1.entity_id, t2.entity_id], [], 1
+        hass, "zone.home", [t1.entity_id, t2.entity_id], [], 0.5
     )
 
     sensor_t1 = f"sensor.home_{t1.entity_id.split('.')[-1]}_distance"
@@ -1228,7 +1341,7 @@ async def test_track_renamed_tracked_entity(
     hass.states.async_set(t1.entity_id, "not_home")
 
     mock_config = await async_setup_single_entry(
-        hass, "zone.home", [t1.entity_id], ["zone.work"], 1
+        hass, "zone.home", [t1.entity_id], ["zone.work"], 0.5
     )
 
     sensor_t1 = f"sensor.home_{t1.entity_id.split('.')[-1]}_distance"
@@ -1264,7 +1377,7 @@ async def test_sensor_unique_ids(
     hass.states.async_set("device_tracker.test2", "not_home")
 
     mock_config = await async_setup_single_entry(
-        hass, "zone.home", [t1.entity_id, "device_tracker.test2"], ["zone.work"], 1
+        hass, "zone.home", [t1.entity_id, "device_tracker.test2"], ["zone.work"], 0.5
     )
 
     sensor_t1 = "sensor.home_test_tracker_1_distance"
@@ -1283,7 +1396,7 @@ async def test_sensor_unique_ids(
 
 async def test_tracked_zone_is_removed(hass: HomeAssistant) -> None:
     """Test that tracked zone is removed."""
-    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 1)
+    await async_setup_single_entry(hass, "zone.home", ["device_tracker.test1"], [], 0.5)
 
     hass.states.async_set(
         "device_tracker.test1",
@@ -1325,7 +1438,7 @@ async def test_tracked_zone_is_removed(hass: HomeAssistant) -> None:
 async def test_tracked_zone_radius_is_changed(hass: HomeAssistant) -> None:
     """Test that radius of the tracked zone is changed."""
     entry = await async_setup_single_entry(
-        hass, "zone.home", ["device_tracker.test1"], [], 1
+        hass, "zone.home", ["device_tracker.test1"], [], 0.5
     )
 
     hass.states.async_set(
@@ -1370,7 +1483,7 @@ async def test_tracked_zone_radius_is_changed(hass: HomeAssistant) -> None:
 async def test_tracked_zone_location_is_changed(hass: HomeAssistant) -> None:
     """Test that gps location of the tracked zone is changed."""
     entry = await async_setup_single_entry(
-        hass, "zone.home", ["device_tracker.test1"], [], 1
+        hass, "zone.home", ["device_tracker.test1"], [], 0.5
     )
 
     hass.states.async_set(

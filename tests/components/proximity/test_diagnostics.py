@@ -58,7 +58,7 @@ async def test_entry_diagnostics(
                 "device_tracker.test4",
             ],
             CONF_IGNORED_ZONES: [],
-            CONF_TOLERANCE: 1,
+            CONF_TOLERANCE: 0.5,
         },
         unique_id=f"{DOMAIN}_home",
     )
@@ -114,5 +114,6 @@ async def test_entry_diagnostics_renamed_entity(
         "device_tracker.test1": [
             "sensor.renamed",
             "sensor.home_test1_direction_of_travel",
+            "sensor.home_test1_speed",
         ]
     }
