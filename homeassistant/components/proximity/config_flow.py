@@ -13,7 +13,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlowWithReload,
 )
-from homeassistant.const import CONF_ZONE, UnitOfLength
+from homeassistant.const import CONF_ZONE, UnitOfSpeed
 from homeassistant.core import State, callback
 from homeassistant.helpers.selector import (
     EntitySelector,
@@ -55,7 +55,10 @@ def _base_schema(user_input: dict[str, Any]) -> VolDictType:
             default=user_input.get(CONF_TOLERANCE, DEFAULT_TOLERANCE),
         ): NumberSelector(
             NumberSelectorConfig(
-                min=1, max=100, step=1, unit_of_measurement=UnitOfLength.METERS
+                min=0.1,
+                max=10.0,
+                step=0.1,
+                unit_of_measurement=UnitOfSpeed.METERS_PER_SECOND,
             ),
         ),
     }

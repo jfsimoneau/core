@@ -57,7 +57,7 @@ async def test_entry_diagnostics(
                 "device_tracker.test4",
             ],
             CONF_IGNORED_ZONES: [],
-            CONF_TOLERANCE: 1,
+            CONF_TOLERANCE: 0.5,
         },
         unique_id=f"{DOMAIN}_home",
     )

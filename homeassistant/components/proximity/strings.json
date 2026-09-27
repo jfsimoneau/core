@@ -38,7 +38,9 @@
           "towards": "[%key:component::proximity::entity::sensor::dir_of_travel::state::towards%]"
         }
       },
-      "nearest_dist_to_zone": { "name": "Nearest distance" }
+      "nearest_dist_to_zone": { "name": "Nearest distance" },
+      "nearest_speed": { "name": "Nearest speed" },
+      "speed": { "name": "{tracked_entity} speed" }
     }
   },
   "issues": {
